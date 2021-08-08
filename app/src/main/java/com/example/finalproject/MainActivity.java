@@ -1,9 +1,5 @@
 package com.example.finalproject;
 
-import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.app.ActivityCompat;
-import androidx.core.content.ContextCompat;
-
 import android.Manifest;
 import android.content.pm.PackageManager;
 import android.media.MediaRecorder;
@@ -12,7 +8,16 @@ import android.os.Environment;
 import android.view.View;
 import android.widget.Button;
 import android.widget.Toast;
+import com.musicg.fingerprint.FingerprintManager;
+import com.musicg.fingerprint.FingerprintSimilarity;
+import com.musicg.fingerprint.FingerprintSimilarityComputer;
+import com.musicg.wave.Wave;
+import javazoom.jl.converter.Converter;
+import javazoom.jl.decoder.JavaLayerException;
 
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 import java.io.IOException;
 
 public class MainActivity extends AppCompatActivity {
@@ -33,7 +38,7 @@ public class MainActivity extends AppCompatActivity {
         }
 
     }
-    public void startRecord(View view){
+    public void startRecord(View view) throws JavaLayerException{
         if(mediaRecorder == null){
             filename = Environment.getExternalStorageDirectory().getAbsolutePath() + "/record.mp3";
             mediaRecorder = new MediaRecorder();
