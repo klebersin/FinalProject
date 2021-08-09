@@ -3,6 +3,7 @@ package com.example.finalproject;
 
 import android.Manifest;
 import android.content.Context;
+import android.content.ContextWrapper;
 import android.content.pm.PackageManager;
 import android.graphics.ImageFormat;
 import android.graphics.SurfaceTexture;
@@ -114,14 +115,19 @@ public class MainActivity extends AppCompatActivity {
     private static final int BUFFER_SIZE = AudioRecord.getMinBufferSize(SAMPLING_RATE_IN_HZ,
             CHANNEL_CONFIG, AUDIO_FORMAT) * BUFFER_SIZE_FACTOR;
     private final AtomicBoolean recordingInProgress = new AtomicBoolean(false);
+    private final AtomicBoolean streamingInProgress = new AtomicBoolean(false);
     private String filename=null;
-    private String filenameCompare = null;
+    private String streamname = null;
+    private String chunk_name = null;
     private Button btn_start;
     private AudioRecord recorder = null;
-    private AudioRecord recorderCompare = null;
+    private AudioRecord streamer = null;
+
+    private int audio_to_compare_size = 0;
+    private int stream_size = 0;
 
     private Thread recordingThread = null;
-    private Thread activeRecordingThread = null;
+    private Thread streamThread = null;
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -138,7 +144,8 @@ public class MainActivity extends AppCompatActivity {
         btnCapture.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                takePicture();
+                compare(null);
+                //takePicture();
             }
         });
 
@@ -170,38 +177,35 @@ public class MainActivity extends AppCompatActivity {
             recorder = null;
 
             recordingThread = null;
-            if(recorderCompare == null){
-                recorderCompare = new AudioRecord(MediaRecorder.AudioSource.DEFAULT, SAMPLING_RATE_IN_HZ,
-                        CHANNEL_CONFIG, AUDIO_FORMAT, BUFFER_SIZE);
-
-                recorderCompare.startRecording();
-
-                activeRecordingThread = new Thread(new ActiveRecordingRunnable(), "Active Recording Thread");
-                activeRecordingThread.start();
-
-            }
-
             btn_start.setText("Iniciar");
+            Log.e("Size", audio_to_compare_size + "");
             Toast.makeText(getApplicationContext(), "Parando grabación", Toast.LENGTH_SHORT).show();
+
         }
 
     }
     public void compare(View view) {
-        byte[] secondFingerPrint = new FingerprintManager().extractFingerprint(new Wave(filename+".wav"));
-        // Compare fingerprints
+        streamer = new AudioRecord(MediaRecorder.AudioSource.DEFAULT, SAMPLING_RATE_IN_HZ,
+                CHANNEL_CONFIG, AUDIO_FORMAT, BUFFER_SIZE);
 
-        byte[] firstFingerPrint = new FingerprintManager().extractFingerprint(new Wave(filenameCompare+".wav"));
-            FingerprintSimilarity fingerprintSimilarity = new FingerprintSimilarityComputer(firstFingerPrint, secondFingerPrint).getFingerprintsSimilarity();
-        Log.e("Hola","Similarity score = " + fingerprintSimilarity.getSimilarity()*100 +"%");
+        streamer.startRecording();
+
+        streamingInProgress.set(true);
+
+        recordingThread = new Thread(new StreamRunnable(), "Stream Thread");
+        recordingThread.start();
+        Toast.makeText(getApplicationContext(), "Stream on", Toast.LENGTH_SHORT).show();
     }
 
     private class RecordingRunnable implements Runnable {
 
         @Override
         public void run() {
-            filename = Environment.getExternalStorageDirectory()+"/record";
-            final File file = new File(filename+".pcm");
-            final File fileWav = new File(filename+".wav");
+            filename = "record";
+            ContextWrapper cw = new ContextWrapper(getApplicationContext());
+            File directory = cw.getDir("dir", Context.MODE_PRIVATE);
+            final File file = new File(directory, filename+".pcm");
+            final File fileWav = new File(directory,filename+".wav");
             final ByteBuffer buffer = ByteBuffer.allocateDirect(BUFFER_SIZE);
 
             try{
@@ -214,7 +218,7 @@ public class MainActivity extends AppCompatActivity {
                     }
                     outStream.write(buffer.array(), 0, BUFFER_SIZE);
                     buffer.clear();
-
+                    audio_to_compare_size++;
                 }
                 Convert.PCMToWAV(file,fileWav,1,44100 ,16);
             } catch (IOException e) {
@@ -237,32 +241,67 @@ public class MainActivity extends AppCompatActivity {
             }
         }
     }
-    private class ActiveRecordingRunnable implements Runnable {
+    private class StreamRunnable implements Runnable {
 
         @Override
         public void run() {
-            filenameCompare = Environment.getExternalStorageDirectory()+"/compare";
-            final File file = new File(filenameCompare+".pcm");
-            final File fileWav = new File(filenameCompare+".wav");
+            ContextWrapper cw = new ContextWrapper(getApplicationContext());
+            File directory = cw.getDir("dir", Context.MODE_PRIVATE);
+
+            streamname = "stream";
+            chunk_name = "chunk";
+
+            final File file = new File(directory ,streamname + ".pcm");
+            final File fileWav = new File(directory, streamname + ".wav");
+            File chunk = new File(directory, chunk_name + ".pcm");
+            final File chunkWav = new File(directory, chunk_name + ".wav");
+
             final ByteBuffer buffer = ByteBuffer.allocateDirect(BUFFER_SIZE);
 
             try{
-                FileOutputStream outStream = new FileOutputStream(file);
-                int count = 0;
-                while (true) {
-                    count++;
-                    int result = recorderCompare.read(buffer, BUFFER_SIZE);
+
+                final FileOutputStream outStream = new FileOutputStream(file);
+                final FileOutputStream chunkStream = new FileOutputStream(chunk);
+                while (streamingInProgress.get()) {
+                    int result = streamer.read(buffer, BUFFER_SIZE);
                     if (result < 0) {
                         throw new RuntimeException("Reading of audio buffer failed: " +
                                 getBufferReadFailureReason(result));
                     }
                     outStream.write(buffer.array(), 0, BUFFER_SIZE);
-
+                    chunkStream.write(buffer.array(), 0, BUFFER_SIZE);
+                    stream_size++;
                     buffer.clear();
-                    Convert.PCMToWAV(file,fileWav,1,44100 ,16);
+                    if(stream_size == audio_to_compare_size) {
+                        Convert.PCMToWAV(chunk, chunkWav,1,44100 ,16);
+                        stream_size = 0;
+                        chunkStream.flush();
+                        compareAudio();
+                        chunk = new File(directory, chunk_name + ".pcm");
+                    }
                 }
+                Convert.PCMToWAV(file, fileWav,1,44100 ,16);
             } catch (IOException e) {
                 throw new RuntimeException("Writing of recorded audio failed", e);
+            }
+        }
+
+        private void compareAudio() {
+            ContextWrapper cw = new ContextWrapper(getApplicationContext());
+            File directory = cw.getDir("dir", Context.MODE_PRIVATE);
+            File fname = new File(directory, filename + ".wav");
+
+            File cname = new File(directory, chunk_name + ".wav");
+
+            byte[] secondFingerPrint = new FingerprintManager().extractFingerprint(new Wave(fname.getAbsolutePath()));
+            // Compare fingerprints
+
+            byte[] firstFingerPrint = new FingerprintManager().extractFingerprint(new Wave(cname.getAbsolutePath()));
+
+            FingerprintSimilarity fingerprintSimilarity = new FingerprintSimilarityComputer(firstFingerPrint, secondFingerPrint).getFingerprintsSimilarity();
+            Log.e("Hola","Similarity score = " + fingerprintSimilarity.getSimilarity()*100 +"%");
+            if(fingerprintSimilarity.getSimilarity()*100 > 9) {
+                takePicture();
             }
         }
 
@@ -281,6 +320,7 @@ public class MainActivity extends AppCompatActivity {
             }
         }
     }
+
     private void takePicture() {
         if(cameraDevice == null)
             return;
@@ -422,7 +462,6 @@ public class MainActivity extends AppCompatActivity {
             e.printStackTrace();
         }
     }
-
 
     private void openCamera() {
         CameraManager manager = (CameraManager)getSystemService(Context.CAMERA_SERVICE);
