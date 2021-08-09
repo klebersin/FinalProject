@@ -41,10 +41,13 @@ public class MainActivity extends AppCompatActivity {
             CHANNEL_CONFIG, AUDIO_FORMAT) * BUFFER_SIZE_FACTOR;
     private final AtomicBoolean recordingInProgress = new AtomicBoolean(false);
     private String filename=null;
+    private String filenameCompare = null;
     private Button btn_start;
     private AudioRecord recorder = null;
+    private AudioRecord recorderCompare = null;
 
     private Thread recordingThread = null;
+    private Thread activeRecordingThread = null;
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -53,9 +56,9 @@ public class MainActivity extends AppCompatActivity {
         if (ContextCompat.checkSelfPermission(getApplicationContext(), Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(getApplicationContext(), Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(MainActivity.this, new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE, Manifest.permission.RECORD_AUDIO}, 1000);
         }
-
     }
-    public void startRecord(View view) throws IOException {
+
+    public void startRecord(View view) {
         if(recorder == null){
             recorder = new AudioRecord(MediaRecorder.AudioSource.DEFAULT, SAMPLING_RATE_IN_HZ,
                     CHANNEL_CONFIG, AUDIO_FORMAT, BUFFER_SIZE);
@@ -82,14 +85,20 @@ public class MainActivity extends AppCompatActivity {
             recordingThread = null;
             btn_start.setText("Iniciar");
             Toast.makeText(getApplicationContext(), "Parando grabación", Toast.LENGTH_SHORT).show();
+            if(recorderCompare == null){
+
+                activeRecordingThread = new Thread(new ActiveRecordingRunnable(), "Active Recording Thread");
+                activeRecordingThread.start();
+
+            }
         }
 
     }
-    public void compare(View view) throws JavaLayerException, IOException {
+    public void compare() {
         byte[] secondFingerPrint = new FingerprintManager().extractFingerprint(new Wave(filename+".wav"));
         // Compare fingerprints
 
-        byte[] firstFingerPrint = new FingerprintManager().extractFingerprint(new Wave(filename+".wav"));
+        byte[] firstFingerPrint = new FingerprintManager().extractFingerprint(new Wave(filenameCompare+".wav"));
             FingerprintSimilarity fingerprintSimilarity = new FingerprintSimilarityComputer(firstFingerPrint, secondFingerPrint).getFingerprintsSimilarity();
         Log.e("Hola","Similarity score = " + fingerprintSimilarity.getSimilarity()*100 +"%");
     }
@@ -104,7 +113,6 @@ public class MainActivity extends AppCompatActivity {
             final ByteBuffer buffer = ByteBuffer.allocateDirect(BUFFER_SIZE);
 
             try{
-
                 final FileOutputStream outStream = new FileOutputStream(file);
                 while (recordingInProgress.get()) {
                     int result = recorder.read(buffer, BUFFER_SIZE);
@@ -113,6 +121,51 @@ public class MainActivity extends AppCompatActivity {
                                 getBufferReadFailureReason(result));
                     }
                     outStream.write(buffer.array(), 0, BUFFER_SIZE);
+                    buffer.clear();
+
+                }
+                Convert.PCMToWAV(file,fileWav,1,44100 ,16);
+            } catch (IOException e) {
+                throw new RuntimeException("Writing of recorded audio failed", e);
+            }
+        }
+
+        private String getBufferReadFailureReason(int errorCode) {
+            switch (errorCode) {
+                case AudioRecord.ERROR_INVALID_OPERATION:
+                    return "ERROR_INVALID_OPERATION";
+                case AudioRecord.ERROR_BAD_VALUE:
+                    return "ERROR_BAD_VALUE";
+                case AudioRecord.ERROR_DEAD_OBJECT:
+                    return "ERROR_DEAD_OBJECT";
+                case AudioRecord.ERROR:
+                    return "ERROR";
+                default:
+                    return "Unknown (" + errorCode + ")";
+            }
+        }
+    }
+    private class ActiveRecordingRunnable implements Runnable {
+
+        @Override
+        public void run() {
+            filenameCompare = Environment.getExternalStorageDirectory()+"/compare";
+            final File file = new File(filenameCompare+".pcm");
+            final File fileWav = new File(filenameCompare+".wav");
+            final ByteBuffer buffer = ByteBuffer.allocateDirect(BUFFER_SIZE);
+
+            try{
+                FileOutputStream outStream = new FileOutputStream(file);
+                int count = 0;
+                while (true) {
+                    count++;
+                    int result = recorderCompare.read(buffer, BUFFER_SIZE);
+                    if (result < 0) {
+                        throw new RuntimeException("Reading of audio buffer failed: " +
+                                getBufferReadFailureReason(result));
+                    }
+                    outStream.write(buffer.array(), 0, BUFFER_SIZE);
+
                     buffer.clear();
                     Convert.PCMToWAV(file,fileWav,1,44100 ,16);
                 }
