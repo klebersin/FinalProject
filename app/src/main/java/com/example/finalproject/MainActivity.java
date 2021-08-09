@@ -7,10 +7,13 @@ import android.media.AudioRecord;
 import android.media.MediaRecorder;
 import android.os.Bundle;
 import android.os.Environment;
+import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.Toast;
 import com.musicg.fingerprint.FingerprintManager;
+import com.musicg.fingerprint.FingerprintSimilarity;
+import com.musicg.fingerprint.FingerprintSimilarityComputer;
 import com.musicg.wave.Wave;
 
 import javazoom.jl.decoder.JavaLayerException;
@@ -42,7 +45,6 @@ public class MainActivity extends AppCompatActivity {
     private AudioRecord recorder = null;
 
     private Thread recordingThread = null;
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -53,7 +55,7 @@ public class MainActivity extends AppCompatActivity {
         }
 
     }
-    public void startRecord(View view) {
+    public void startRecord(View view) throws IOException {
         if(recorder == null){
             recorder = new AudioRecord(MediaRecorder.AudioSource.DEFAULT, SAMPLING_RATE_IN_HZ,
                     CHANNEL_CONFIG, AUDIO_FORMAT, BUFFER_SIZE);
@@ -84,10 +86,12 @@ public class MainActivity extends AppCompatActivity {
 
     }
     public void compare(View view) throws JavaLayerException, IOException {
-        File file = new File(filename+".pcm");
-        File file2 = new File(filename+".wav");
-        Convert.PCMToWAV(file,file2,1,8000 ,2);
-        byte[] firstFingerPrint = new FingerprintManager().extractFingerprint(new Wave(filename));
+        byte[] secondFingerPrint = new FingerprintManager().extractFingerprint(new Wave(filename+".wav"));
+        // Compare fingerprints
+
+        byte[] firstFingerPrint = new FingerprintManager().extractFingerprint(new Wave(filename+".wav"));
+            FingerprintSimilarity fingerprintSimilarity = new FingerprintSimilarityComputer(firstFingerPrint, secondFingerPrint).getFingerprintsSimilarity();
+        Log.e("Hola","Similarity score = " + fingerprintSimilarity.getSimilarity()*100 +"%");
     }
 
     private class RecordingRunnable implements Runnable {
