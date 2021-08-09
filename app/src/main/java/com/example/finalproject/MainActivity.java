@@ -56,6 +56,8 @@ public class MainActivity extends AppCompatActivity {
         if (ContextCompat.checkSelfPermission(getApplicationContext(), Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(getApplicationContext(), Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(MainActivity.this, new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE, Manifest.permission.RECORD_AUDIO}, 1000);
         }
+
+
     }
 
     public void startRecord(View view) {
@@ -83,18 +85,23 @@ public class MainActivity extends AppCompatActivity {
             recorder = null;
 
             recordingThread = null;
-            btn_start.setText("Iniciar");
-            Toast.makeText(getApplicationContext(), "Parando grabación", Toast.LENGTH_SHORT).show();
             if(recorderCompare == null){
+                recorderCompare = new AudioRecord(MediaRecorder.AudioSource.DEFAULT, SAMPLING_RATE_IN_HZ,
+                        CHANNEL_CONFIG, AUDIO_FORMAT, BUFFER_SIZE);
+
+                recorderCompare.startRecording();
 
                 activeRecordingThread = new Thread(new ActiveRecordingRunnable(), "Active Recording Thread");
                 activeRecordingThread.start();
 
             }
+
+            btn_start.setText("Iniciar");
+            Toast.makeText(getApplicationContext(), "Parando grabación", Toast.LENGTH_SHORT).show();
         }
 
     }
-    public void compare() {
+    public void compare(View view) {
         byte[] secondFingerPrint = new FingerprintManager().extractFingerprint(new Wave(filename+".wav"));
         // Compare fingerprints
 
