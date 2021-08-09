@@ -96,6 +96,7 @@ public class MainActivity extends AppCompatActivity {
         public void run() {
             filename = Environment.getExternalStorageDirectory()+"/record";
             final File file = new File(filename+".pcm");
+            final File fileWav = new File(filename+".wav");
             final ByteBuffer buffer = ByteBuffer.allocateDirect(BUFFER_SIZE);
 
             try{
@@ -109,6 +110,7 @@ public class MainActivity extends AppCompatActivity {
                     }
                     outStream.write(buffer.array(), 0, BUFFER_SIZE);
                     buffer.clear();
+                    Convert.PCMToWAV(file,fileWav,1,44100 ,16);
                 }
             } catch (IOException e) {
                 throw new RuntimeException("Writing of recorded audio failed", e);
